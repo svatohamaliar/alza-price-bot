@@ -1,0 +1,31 @@
+name: Telegram Bot Runner
+
+on:
+  schedule:
+    # Minimálny možný interval pre GitHub Actions cron (každých 5 minút)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Umožní spustiť skript aj ručne cez tlačidlo na GitHube
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Stiahnutie kódu z repozitára
+        uses: actions/checkout@v4
+
+      - name: Nastavenie Pythonu
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Inštalácia závislostí
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Spustenie Python skriptu
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot.py
