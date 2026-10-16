@@ -88,7 +88,9 @@ def parse_alza_products():
     except Exception as e:
         print(f"Chyba pri parsovaní Alzy: {e}")
         
-    return productsdef load_cache():
+    return products
+
+def load_cache():
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
@@ -111,10 +113,10 @@ def main():
 
     old_cache = load_cache()
     
-    # Ak cache neexistuje (prvý beh), iba ju uložíme a pošleme informáciu
     if not old_cache:
         save_cache(current_products)
         send_telegram_message(f"🤖 *Alza Bot inicializovaný!*\nSledujem {len(current_products)} produktov z vybranej kategórie.")
+        print("Vytvorená počiatočná cache a odoslaná správa o inicializácii.")
         return
 
     changes_detected = False
@@ -123,20 +125,20 @@ def main():
     current_keys = set(current_products.keys())
     old_keys = set(old_cache.keys())
 
-    # 1. Nové produkty v ponuke
+    # 1. Nové produkty
     new_items = current_keys - old_keys
     for item in new_items:
         changes_detected = True
         p = current_products[item]
         report_lines.append(f"\n✨ *Nový produkt:* [{item}]({p['link']})\n💶 Cena: *{p['price']} €*")
 
-    # 2. Vypadnuté / vypredané produkty
+    # 2. Vypadnuté produkty
     removed_items = old_keys - current_keys
     for item in removed_items:
         changes_detected = True
         report_lines.append(f"\n❌ *Vypredaný / Zmizol z ponuky:* {item}")
 
-    # 3. Zmeny cien u existujúcich produktov
+    # 3. Zmeny cien
     common_items = current_keys & old_keys
     for item in common_items:
         old_price = old_cache[item]["price"]
@@ -151,13 +153,10 @@ def main():
             else:
                 report_lines.append(f"\n📈 *Zdraženie:* [{item}]({link})\n💶 Stará cena: {old_price} € ➡️ Nová cena: *{new_price} €* (Vzostup o {diff:.2f} €)")
 
-    # Uloženie aktuálneho stavu
     save_cache(current_products)
 
-    # Ak nastali zmeny, pošleme správy na Telegram
     if changes_detected:
         full_message = "\n".join(report_lines)
-        # Telegram má limit 4096 znakov na správu
         send_telegram_message(full_message)
         print("Zmeny boli zaznamenané a odoslané do Telegramu.")
     else:
