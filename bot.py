@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from bs4soup import BeautifulSoup # Prípadne BeautifulSoup z bs4
+from bs4 import BeautifulSoup
 
 # Načítanie premenných prostredia z GitHub Secrets
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
