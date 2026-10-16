@@ -2,9 +2,8 @@ name: Telegram Bot Runner
 
 on:
   schedule:
-    # Minimálny možný interval pre GitHub Actions cron (každých 5 minút)
     - cron: '*/5 * * * *'
-  workflow_dispatch: # Umožní spustiť skript aj ručne cez tlačidlo na GitHube
+  workflow_dispatch:
 
 jobs:
   run-script:
@@ -22,7 +21,7 @@ jobs:
       - name: Inštalácia závislostí
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests
 
       - name: Spustenie Python skriptu
         env:
