@@ -30,44 +30,50 @@ def send_telegram_message(message):
 
 def parse_alza_products():
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "sk-SK,sk;q=0.9,en-US;q=0.8,en;q=0.7"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "sk-SK,sk;q=0.9,cs;q=0.8,en-US;q=0.7,en;q=0.6",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
     }
     
     products = {}
     try:
         response = requests.get(ALZA_URL, headers=headers)
+        print(f"Alza HTTP Status: {response.status_code}")
+        
         if response.status_code != 200:
             print(f"Nepodarilo sa načítať Alzu, status: {response.status_code}")
             return products
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Alza boxy produktov v zozname
-        # Poznámka: Selektory na Alze sa môžu mierne líšiť, toto je štandardná štruktúra katalógu
-        items = soup.select('.box.browsingitem, .item.box')
-        
+        # Hľadáme elementy produktov v zozname na Alze
+        items = soup.select('.box.browsingitem')
         if not items:
-            # Alternatívny selektor ak by sa zmenila trieda
             items = soup.select('.browsingitem')
+        if not items:
+            items = soup.select('.item')
+
+        print(f"Nájdených elementov produktov: {len(items)}")
 
         for item in items:
-            title_elem = item.select.one('.name, .browsingitem-title')
-            price_elem = item.select.one('.price-box__price, .cena')
-            link_elem = item.select.one('a.name, a.browsingitem-title')
+            title_elem = item.select_one('.name, .browsingitem-title, a.name')
+            price_elem = item.select_one('.price-box__price, .cena, span.price')
+            link_elem = item.select_one('a.name, a.browsingitem-title, h3 a')
 
             if title_elem and price_elem:
                 name = title_elem.get_text(strip=True)
                 price_str = price_elem.get_text(strip=True)
                 
-                # Vyčistenie ceny na čisté číslo (napr. "349 €" -> 349.0)
+                # Vyčistenie ceny na číslo
                 price_clean = ''.join(c for c in price_str if c.isdigit() or c == ',').replace(',', '.')
                 try:
                     price = float(price_clean)
                 except ValueError:
                     continue
                 
-                # Získanie URL produktu
                 link = ""
                 if link_elem and link_elem.has_attr('href'):
                     link = link_elem['href']
@@ -82,9 +88,7 @@ def parse_alza_products():
     except Exception as e:
         print(f"Chyba pri parsovaní Alzy: {e}")
         
-    return products
-
-def load_cache():
+    return productsdef load_cache():
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
