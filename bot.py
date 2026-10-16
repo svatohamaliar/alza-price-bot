@@ -1,6 +1,6 @@
 import os
 import json
-import requests
+from curl_cffi import requests
 from bs4 import BeautifulSoup
 
 # Načítanie premenných prostredia z GitHub Secrets
@@ -29,18 +29,10 @@ def send_telegram_message(message):
         print(f"Chyba pri odosielaní správy do Telegramu: {e}")
 
 def parse_alza_products():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "sk-SK,sk;q=0.9,cs;q=0.8,en-US;q=0.7,en;q=0.6",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1"
-    }
-    
     products = {}
     try:
-        response = requests.get(ALZA_URL, headers=headers)
+        # Použijeme curl_cffi s imitáciou prehliadača Chrome, čím obídeme Cloudflare ochranu
+        response = requests.get(ALZA_URL, impersonate="chrome120")
         print(f"Alza HTTP Status: {response.status_code}")
         
         if response.status_code != 200:
