@@ -1,13 +1,12 @@
 import os
 import json
-from curl_cffi import requests
+import re
+import requests
 from bs4 import BeautifulSoup
 
-# Načítanie premenných prostredia z GitHub Secrets
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Alza URL adresa z tvojho zadania
 ALZA_URL = "https://www.alza.sk/stereo-zosilnovace/18873965.htm#f&limit=-1--500&cud=0&pg=1&prod=&par20152=4--6&par20159=2--8&sc=106"
 CACHE_FILE = "products_cache.json"
 
@@ -30,55 +29,59 @@ def send_telegram_message(message):
 
 def parse_alza_products():
     products = {}
+    # Použijeme Jina API na obídenie Cloudflare blokovania na GitHub Actions
+    jina_url = f"https://r.jina.ai/{ALZA_URL}"
+    
     try:
-        # Použijeme curl_cffi s imitáciou prehliadača Chrome, čím obídeme Cloudflare ochranu
-        response = requests.get(ALZA_URL, impersonate="chrome120")
-        print(f"Alza HTTP Status: {response.status_code}")
+        response = requests.get(jina_url, headers={"Accept": "text/markdown"})
+        print(f"Jina API HTTP Status: {response.status_code}")
         
         if response.status_code != 200:
-            print(f"Nepodarilo sa načítať Alzu, status: {response.status_code}")
+            print(f"Nepodarilo sa načítať dáta, status: {response.status_code}")
             return products
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+        markdown_text = response.text
         
-        # Hľadáme elementy produktov v zozname na Alze
-        items = soup.select('.box.browsingitem')
-        if not items:
-            items = soup.select('.browsingitem')
-        if not items:
-            items = soup.select('.item')
+        # Jina vracia markdown obsah, kde produkty a ceny bývajú štruktúruje. 
+        # Rozdelíme text na bloky/riadky a vyhľadáme produkty a ceny pomocou regulárnych výrazov.
+        # Hľadáme vzory produktov a cien v eurách (napr. "349 €" alebo "349,00 €")
+        
+        lines = markdown_text.split('\n')
+        current_title = None
+        current_link = None
+        
+        for line in lines:
+            line = line.strip()
+            # Hladáme markdown odkazy, ktoré často reprezentujú názov produktu
+            link_match = re.search(r'\[([^\]]+)\]\((https?://[^\)]+alza\.sk[^\)]+)\)', line)
+            if link_match:
+                potential_title = link_match.group(1)
+                potential_link = link_match.group(2)
+                # Filtrujeme len zmysluplné názvy produktov (vynecháme menu, filtre atď.)
+                if len(potential_title) > 5 and "€" not in potential_title:
+                    current_title = potential_title
+                    current_link = potential_link
 
-        print(f"Nájdených elementov produktov: {len(items)}")
-
-        for item in items:
-            title_elem = item.select_one('.name, .browsingitem-title, a.name')
-            price_elem = item.select_one('.price-box__price, .cena, span.price')
-            link_elem = item.select_one('a.name, a.browsingitem-title, h3 a')
-
-            if title_elem and price_elem:
-                name = title_elem.get_text(strip=True)
-                price_str = price_elem.get_text(strip=True)
-                
-                # Vyčistenie ceny na číslo
-                price_clean = ''.join(c for c in price_str if c.isdigit() or c == ',').replace(',', '.')
+            # Hľadáme cenu v riadku (napr. "349 €" alebo "Cena: 349 €")
+            price_match = re.search(r'(\d[\d\s]*(?:,\d{1,2})?)\s*€', line)
+            if price_match and current_title:
+                price_str = price_match.group(1).replace(' ', '').replace(',', '.')
                 try:
-                    price = float(price_clean)
+                    price = float(price_str)
+                    # Ak je cena v rozumnom limite pre zosilňovače (do 500 €)
+                    if 10 <= price <= 500:
+                        products[current_title] = {
+                            "price": price,
+                            "link": current_link or ALZA_URL
+                        }
+                        current_title = None # reset pre ďalší produkt
                 except ValueError:
-                    continue
-                
-                link = ""
-                if link_elem and link_elem.has_attr('href'):
-                    link = link_elem['href']
-                    if not link.startswith('http'):
-                        link = "https://www.alza.sk" + link
+                    pass
 
-                products[name] = {
-                    "price": price,
-                    "link": link
-                }
-                
+        print(f"Úspešne parsovaných produktov: {len(products)}")
+
     except Exception as e:
-        print(f"Chyba pri parsovaní Alzy: {e}")
+        print(f"Chyba pri parsovaní: {e}")
         
     return products
 
@@ -96,11 +99,11 @@ def save_cache(data):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 def main():
-    print("Spúšťam kontrolu Alza zoznamu...")
+    print("Spúšťam kontrolu Alza zoznamu cez proxy...")
     current_products = parse_alza_products()
     
     if not current_products:
-        print("Nepodarilo sa nájsť žiadne produkty (možná ochrana proti botom alebo zmena štruktúry).")
+        print("Nepodarilo sa nájsť žiadne produkty.")
         return
 
     old_cache = load_cache()
@@ -118,21 +121,18 @@ def main():
     old_keys = set(old_cache.keys())
 
     # 1. Nové produkty
-    new_items = current_keys - old_keys
-    for item in new_items:
+    for item in current_keys - old_keys:
         changes_detected = True
         p = current_products[item]
         report_lines.append(f"\n✨ *Nový produkt:* [{item}]({p['link']})\n💶 Cena: *{p['price']} €*")
 
     # 2. Vypadnuté produkty
-    removed_items = old_keys - current_keys
-    for item in removed_items:
+    for item in old_keys - current_keys:
         changes_detected = True
         report_lines.append(f"\n❌ *Vypredaný / Zmizol z ponuky:* {item}")
 
     # 3. Zmeny cien
-    common_items = current_keys & old_keys
-    for item in common_items:
+    for item in current_keys & old_keys:
         old_price = old_cache[item]["price"]
         new_price = current_products[item]["price"]
         link = current_products[item]["link"]
@@ -148,8 +148,7 @@ def main():
     save_cache(current_products)
 
     if changes_detected:
-        full_message = "\n".join(report_lines)
-        send_telegram_message(full_message)
+        send_telegram_message("\n".join(report_lines))
         print("Zmeny boli zaznamenané a odoslané do Telegramu.")
     else:
         print("Žiadne nové zmeny cien ani produktov.")
