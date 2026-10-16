@@ -6,7 +6,7 @@ import requests
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-ALZA_URL = "https://www.alza.sk/stereo-zosilnovace/18873965.htm#f&limit=-1--500&cud=0&pg=1&prod=&par20152=4--6&par20159=2--8&sc=106"
+ALZA_URL = "https://zosilnovace.heureka.sk/f:3754:1;12284:2;32155:1;p:2/"
 CACHE_FILE = "products_cache.json"
 DEBUG_FILE = "debug_alza.md"
 
