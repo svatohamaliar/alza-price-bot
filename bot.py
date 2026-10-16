@@ -2,11 +2,12 @@ import os
 import json
 import re
 import requests
-from bs4 import BeautifulSoup
 
+# Načítanie premenných prostredia z GitHub Secrets
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# Alza URL adresa pre stereo zosilňovače s filtrami
 ALZA_URL = "https://www.alza.sk/stereo-zosilnovace/18873965.htm#f&limit=-1--500&cud=0&pg=1&prod=&par20152=4--6&par20159=2--8&sc=106"
 CACHE_FILE = "products_cache.json"
 
@@ -29,7 +30,7 @@ def send_telegram_message(message):
 
 def parse_alza_products():
     products = {}
-    # Použijeme Jina API na obídenie Cloudflare blokovania na GitHub Actions
+    # Použitie Jina Reader API na obídenie Cloudflare geo-blokovania a ochrany GitHub Actions
     jina_url = f"https://r.jina.ai/{ALZA_URL}"
     
     try:
@@ -41,40 +42,37 @@ def parse_alza_products():
             return products
 
         markdown_text = response.text
-        
-        # Jina vracia markdown obsah, kde produkty a ceny bývajú štruktúruje. 
-        # Rozdelíme text na bloky/riadky a vyhľadáme produkty a ceny pomocou regulárnych výrazov.
-        # Hľadáme vzory produktov a cien v eurách (napr. "349 €" alebo "349,00 €")
-        
         lines = markdown_text.split('\n')
+        
         current_title = None
         current_link = None
         
         for line in lines:
             line = line.strip()
-            # Hladáme markdown odkazy, ktoré často reprezentujú názov produktu
+            
+            # Hľadáme odkazy na produkty vo formáte [Názov](URL)
             link_match = re.search(r'\[([^\]]+)\]\((https?://[^\)]+alza\.sk[^\)]+)\)', line)
             if link_match:
-                potential_title = link_match.group(1)
-                potential_link = link_match.group(2)
-                # Filtrujeme len zmysluplné názvy produktov (vynecháme menu, filtre atď.)
-                if len(potential_title) > 5 and "€" not in potential_title:
-                    current_title = potential_title
-                    current_link = potential_link
+                title = link_match.group(1).strip()
+                link = link_match.group(2).strip()
+                # Filtrovanie relevantných položiek (vynechanie navigácie a rozhrania)
+                if len(title) > 10 and "€" not in title and "http" not in title and "Alza" not in title:
+                    current_title = title
+                    current_link = link
 
-            # Hľadáme cenu v riadku (napr. "349 €" alebo "Cena: 349 €")
-            price_match = re.search(r'(\d[\d\s]*(?:,\d{1,2})?)\s*€', line)
+            # Hľadáme cenu v riadku (napr. "349 €" alebo "349,90 €")
+            price_match = re.search(r'([\d\s]+(?:,\d{1,2})?)\s*€', line)
             if price_match and current_title:
                 price_str = price_match.group(1).replace(' ', '').replace(',', '.')
                 try:
                     price = float(price_str)
-                    # Ak je cena v rozumnom limite pre zosilňovače (do 500 €)
+                    # Overenie, či je cena v rozumnom limite pre vybranú kategóriu (do 500 €)
                     if 10 <= price <= 500:
                         products[current_title] = {
                             "price": price,
-                            "link": current_link or ALZA_URL
+                            "link": current_link
                         }
-                        current_title = None # reset pre ďalší produkt
+                        current_title = None  # Reset pre nasledujúci produkt
                 except ValueError:
                     pass
 
@@ -108,6 +106,7 @@ def main():
 
     old_cache = load_cache()
     
+    # Ak cache ešte neexistuje, vytvoríme počiatočný stav
     if not old_cache:
         save_cache(current_products)
         send_telegram_message(f"🤖 *Alza Bot inicializovaný!*\nSledujem {len(current_products)} produktov z vybranej kategórie.")
@@ -126,7 +125,7 @@ def main():
         p = current_products[item]
         report_lines.append(f"\n✨ *Nový produkt:* [{item}]({p['link']})\n💶 Cena: *{p['price']} €*")
 
-    # 2. Vypadnuté produkty
+    # 2. Vypadnuté / Vypredané produkty
     for item in old_keys - current_keys:
         changes_detected = True
         report_lines.append(f"\n❌ *Vypredaný / Zmizol z ponuky:* {item}")
